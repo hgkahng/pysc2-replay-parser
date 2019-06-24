@@ -16,18 +16,18 @@ This repository provides the following:
 ## Folder Structures
 
     .
-    +-- configs
-    +-- notebooks
+    +-- configs/
+    +-- notebooks/
         +-- A-ObservedParsedFeatures.ipynb
-    +-- sample
+    +-- sample/
         +-- PlayerMetaInfo.json  # Game result information
         +-- ScreenFeatures.npz   # Screen features (17)
         +-- MinimapFeatures.npz  # Minimap feature (7)
-    .gitignore
-    dowload_replays.py
-    replay_agent.py       
-    transform_replays.py  
-    README.md
+    +-- .gitignore
+    +-- dowload_replays.py
+    +-- replay_agent.py       
+    +-- transform_replays.py  
+    +-- README.md
 
 
 ## Loading Parsed Results
