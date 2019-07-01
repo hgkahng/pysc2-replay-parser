@@ -20,9 +20,9 @@ from pysc2.lib import point, features
 from s2clientprotocol import sc2api_pb2 as sc_pb
 from s2clientprotocol import common_pb2 as sc_common
 
-from replay_agent import ParserBase
-from replay_agent import ScreenFeatParser
-from replay_agent import MinimapFeatParser
+from parsers import ParserBase
+from parsers import ScreenFeatParser
+from parsers import MinimapFeatParser
 
 
 FLAGS = flags.FLAGS
