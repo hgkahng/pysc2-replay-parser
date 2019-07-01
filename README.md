@@ -25,7 +25,7 @@ This repository provides the following:
         +-- MinimapFeatures.npz  # Minimap feature (7)
     +-- .gitignore
     +-- dowload_replays.py
-    +-- replay_agent.py       
+    +-- parsers.py
     +-- transform_replays.py  
     +-- README.md
 
