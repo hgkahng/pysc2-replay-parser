@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 
 """
-    1. ReplayAgent
+    1. ParserBase
+    2. ScreenFeatParser
+    3. MinimapFeatParser
+    4. CustomSpatialParser (WIP)
 """
 
 import os
@@ -15,28 +18,41 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files')
 
 
-class ReplayAgent(object):
-    """A replay agent that saves replay information."""
+class ParserBase(object):
+    """Abstract class for replay parsers."""
     def __init__(self, replay_name):
-
         self.replay_name = replay_name
         self.write_dir = os.path.join(FLAGS.result_dir, replay_name)
-        self.screen_features = collections.defaultdict(list)
-        self.minimap_features = collections.defaultdict(list)
+        os.makedirs(self.write_dir, exist_ok=True)
 
     def step(self, timestep):
         """..."""
-
-        self._append_screen_features(timestep)
-        self._append_minimap_features(timestep)
-
         if timestep.step_type == environment.StepType.LAST:
-
-            os.makedirs(self.write_dir, exist_ok=True)
-            self._save_screen_features(format_='npz')
-            self._save_minimap_features(format_='npz')
-
+            self.save()
             return
+        else:
+            self.parse(timestep)
+
+    def parse(self, timestep):
+        """Must override."""
+        raise NotImplementedError
+
+    def save(self, save_format='npz'):
+        """Must override."""
+        raise NotImplementedError
+
+
+class ScreenFeatParser(ParserBase):
+    """Parse 'feature_screen' from timestep observation."""
+    def __init__(self, replay_name):
+        super(ScreenFeatParser, self).__init__(replay_name)
+        self.screen_features = collections.defaultdict(list)
+
+    def parse(self, timestep):
+        self._append_screen_features(timestep)
+
+    def save(self, save_format='npz'):
+        self._save_screen_features(format_=save_format)
 
     def _append_screen_features(self, timestep):
         screen = timestep.observation['feature_screen']
@@ -44,32 +60,49 @@ class ReplayAgent(object):
         for name, _ in name2idx.items():
             self.screen_features[name].append(screen[name])
 
+    def _save_screen_features(self, format_):
+        """Save screen to .npz format."""
+        assert isinstance(self.screen_features, dict)
+
+        if format_ == 'npz':
+            write_file = os.path.join(self.write_dir, 'ScreenFeatures.npz')
+            np.savez_compressed(
+                file=write_file,
+                **self.screen_features
+            )
+            print('{} | Saved screen features to: {}'.format(self.__class__.__name__, write_file))
+        else:
+            raise NotImplementedError
+
+
+class MinimapFeatParser(ParserBase):
+    """Parser 'feature_minimap' from timestep observation."""
+    def __init__(self, replay_name):
+        super(MinimapFeatParser, self).__init__(replay_name)
+        self.minimap_features = collections.defaultdict(list)
+
+    def parse(self, timestep):
+        self._append_minimap_features(timestep)
+
+    def save(self, save_format='npz'):
+        self._save_minimap_features(format_=save_format)
+
     def _append_minimap_features(self, timestep):
         minimap = timestep.observation['feature_minimap']
         name2idx = minimap._index_names[0]  # name: index
         for name, _ in name2idx.items():
             self.minimap_features[name].append(minimap[name])
 
-    def _save_screen_features(self, format_='npz'):
-        """Save screen to .npz format."""
-        assert isinstance(self.screen_features, dict)
-
-        if format_ == 'npz':
-            np.savez_compressed(
-                file=os.path.join(self.write_dir, 'ScreenFeatures.npz'),
-                **self.screen_features
-            )
-        else:
-            raise NotImplementedError
-
-    def _save_minimap_features(self, format_='npz'):
+    def _save_minimap_features(self, format_):
         """Save minimap to .npz format."""
         assert isinstance(self.minimap_features, dict)
 
         if format_ == 'npz':
+            write_file = os.path.join(self.write_dir, 'MinimapFeatures.npz')
             np.savez_compressed(
-                file=os.path.join(self.write_dir, 'MinimapFeatures.npz'),
+                file=write_file,
                 **self.minimap_features
             )
+            print('{} | Saved minimap features to: {}'.format(self.__class__.__name__, write_file))
         else:
             raise NotImplementedError
