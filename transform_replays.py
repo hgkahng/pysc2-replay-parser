@@ -12,6 +12,7 @@ import os
 import sys
 import glob
 import json
+import numpy as np
 
 from absl import app, flags
 from pysc2 import run_configs
@@ -23,6 +24,9 @@ from s2clientprotocol import common_pb2 as sc_common
 from parsers import ParserBase
 from parsers import ScreenFeatParser
 from parsers import MinimapFeatParser
+from parsers import SpatialFeatParser
+
+from custom_features import custom_features_from_game_info
 
 
 FLAGS = flags.FLAGS
@@ -58,6 +62,8 @@ class ReplayRunner(object):
     def __init__(self, replay_file_path, parsers,
                  player_id=1, screen_size=(64, 64), minimap_size=(64, 64),
                  discount=1., step_mul=1):
+
+        self.customized = True  # FIXME
 
         if isinstance(parsers, list):
             self.parsers = parsers
@@ -169,15 +175,19 @@ class ReplayRunner(object):
     def start(self):
         """Start parsing replays."""
         # sc_pb; RequestGameInfo -> ResponseGameInfo
-        _features = features.features_from_game_info(
-            game_info=self.controller.game_info(),
-            use_feature_units=True,
-            use_raw_units=False,
-            action_space=None,
-            hide_specific_actions=True,
-            use_unit_counts=False,
-            use_camera_position=False,
+        if self.customized:
+            _features = custom_features_from_game_info(
+                game_info=self.controller.game_info(),
             )
+        else:
+            _features = features.features_from_game_info(
+                game_info=self.controller.game_info(),
+                use_feature_units=True,
+                use_raw_units=False,
+                action_space=None,
+                hide_specific_actions=True,
+                use_unit_counts=False,
+                use_camera_position=False)
 
         while True:
 
@@ -246,7 +256,7 @@ def main(unused):
     os.environ['SC2PATH'] = FLAGS.sc2_path
 
     # Get parser objects
-    parser_objects = [ScreenFeatParser, MinimapFeatParser]
+    parser_objects = [ScreenFeatParser, MinimapFeatParser, SpatialFeatParser]
 
     # Parse
     if FLAGS.replay_file is not None:
@@ -293,7 +303,8 @@ def main(unused):
                 runner.controller.quit()
                 sys.exit()
             finally:
-                print('Replay #{:{align}{width}} finished...'.format(i + 1, align='>', width=num_replays))
+                width_ = int(np.log2(num_replays))
+                print('Replay #{:{align}{width}} finished...'.format(i + 1, align='>', width=width_))
                 runner.controller.quit()
 
 
