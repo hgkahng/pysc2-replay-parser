@@ -273,12 +273,9 @@ def main(unused):
             runner.start()
         except ValueError:
             print("Skipping invalid replay...")
-            runner.controller.quit()
         except KeyboardInterrupt:
-            runner.controller.quit()
             sys.exit()
         finally:
-            print('Replay finished...')
             runner.controller.quit()
     else:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
@@ -298,9 +295,7 @@ def main(unused):
                 runner.start()
             except ValueError:
                 print("Skipping invalid replay...")
-                runner.controller.quit()
             except KeyboardInterrupt:
-                runner.controller.quit()
                 sys.exit()
             finally:
                 width_ = int(np.log2(num_replays))
