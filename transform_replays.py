@@ -12,6 +12,7 @@ import os
 import sys
 import glob
 import json
+import collections
 import numpy as np
 
 from absl import app, flags
@@ -78,8 +79,7 @@ class ReplayRunner(object):
 
         self.replay_file_path = os.path.abspath(replay_file_path)
         self.replay_name = os.path.split(replay_file_path)[-1].replace('.SC2Replay', '')
-        self.write_dir = os.path.join(FLAGS.result_dir, self.replay_name)
-        os.makedirs(self.write_dir, exist_ok=True)
+        self.write_dir = os.path.join(FLAGS.result_dir, FLAGS.race_matchup, self.replay_name)
 
         # Configure screen size
         if isinstance(screen_size, tuple):
@@ -119,11 +119,19 @@ class ReplayRunner(object):
         # 'replay_info' returns metadata about a replay file. Does not load the replay
         info = self.controller.replay_info(replay_data)
         if not self.check_valid_replay(info, ping):
-            print("'{}.SC2Replay' is not a valid replay file.".format(self.replay_name))
-            raise ValueError
+            self.safe_escape()
+            raise ValueError("Invalid replay...")
+
+        # Filter race matchup
+        if not self.is_valid_matchup(info, matchup=FLAGS.race_matchup):
+            self.safe_escape()
+            raise ValueError("Invalid matchup...")
 
         # Map name
         self.map_name = info.map_name
+
+        # Create write directory
+        os.makedirs(self.write_dir, exist_ok=True)
 
         # Save player meta information (results, apm, mmr, ...)
         self.player_meta_info = self.get_player_meta_info(info)
@@ -218,16 +226,16 @@ class ReplayRunner(object):
     def check_valid_replay(info, ping):
         """Check validity of replay."""
         if info.HasField('error'):
-            print('Has error...')
+            print('Has error...', end=' ')
             return False
         elif info.base_build != ping.base_build:
-            print('Different base build...')
+            print('Different base build...', end=' ')
             return True
         elif info.game_duration_loops < FLAGS.min_game_length:
-            print('Game too short...')
+            print('Game too short...', end=' ')
             return False
         elif len(info.player_info) != 2:
-            print('Not a game with two players...')
+            print('Not a game with two players...', end=' ')
             return False
         else:
             return True
@@ -247,9 +255,36 @@ class ReplayRunner(object):
         return result
 
     @staticmethod
-    def filter_by_matchup(info, matchup=None):
-        """Filter replay by race matchup."""
-        raise NotImplementedError
+    def is_valid_matchup(info, matchup=None):
+        """
+        Filter replay by race matchup.
+        A typical matchup string takes the form of 'TvT', for example.
+        Returns True if matchup is valid, or of interest.
+        """
+
+        matchup_list = matchup.split('v')
+
+        full2short = {'Terran': 'T', 'Protoss': 'P', 'Zerg': 'Z'}
+        assert all([race in full2short.values() for race in matchup_list])
+
+        races_short = []
+        for info_pb in info.player_info:
+            race_full = sc_common.Race.Name(info_pb.player_info.race_actual)
+            race_short = full2short.get(race_full)
+            races_short.append(race_short)
+        
+        print('Expected matchup: {} | Received matchup: {}'.format('v'.join(races_short), matchup))
+
+        def compare(x_seq, y_seq):
+            is_equal = collections.Counter(x_seq) == collections.Counter(y_seq)
+            return is_equal
+
+        return compare(matchup_list, races_short)
+
+    def safe_escape(self):
+        """Closes client."""
+        if self.controller.ping():
+            self.controller.quit()
 
 
 def main(unused):
@@ -277,8 +312,8 @@ def main(unused):
                 step_mul=FLAGS.step_mul
             )
             runner.start()
-        except ValueError:
-            print("Skipping invalid replay...")
+        except ValueError as err:
+            print(str(err), 'Skipping invalid replay...')
         except KeyboardInterrupt:
             sys.exit()
         finally:
@@ -299,14 +334,17 @@ def main(unused):
                     step_mul=FLAGS.step_mul
                 )
                 runner.start()
-            except ValueError:
-                print("Skipping invalid replay...")
+            except ValueError as err:
+                print(str(err), 'Skipping...')
             except KeyboardInterrupt:
                 sys.exit()
             finally:
                 width_ = int(np.log2(num_replays))
-                print('Replay #{:{align}{width}} finished...'.format(i + 1, align='>', width=width_))
-                runner.controller.quit()
+                print('Replay #{:{align}{width}} terminating...'.format(i + 1, align='>', width=width_))
+                try:
+                    runner.controller.quit()
+                except UnboundLocalError:  # When quiting before assignment of controller
+                    pass
 
 
 if __name__ == '__main__':

@@ -16,14 +16,16 @@ from absl import flags
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files')
+flags.DEFINE_enum('race_matchup', default='TvT', enum_values=['TvT', 'TvP', 'TvZ', 'PvP', 'PvZ', 'ZvZ'], help='Race matchups.')
+flags.register_validator('race_matchup', lambda matchup: all([race in ['T', 'P', 'Z'] for race in matchup.split('v')]))
+flags.mark_flag_as_required('race_matchup')
 
 
 class ParserBase(object):
     """Abstract class for replay parsers."""
     def __init__(self, replay_name):
         self.replay_name = replay_name
-        self.write_dir = os.path.join(FLAGS.result_dir, replay_name)
-        os.makedirs(self.write_dir, exist_ok=True)
+        self.write_dir = os.path.join(FLAGS.result_dir, FLAGS.race_matchup, replay_name)  # TODO: Move as argument in 'step'
 
     def step(self, timestep):
         """..."""
