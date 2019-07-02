@@ -31,7 +31,6 @@ class ParserBase(object):
         """..."""
         if timestep.step_type == environment.StepType.LAST:
             self.save()
-            return
         else:
             self.parse(timestep)
 
