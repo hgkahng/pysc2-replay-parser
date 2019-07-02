@@ -11,21 +11,16 @@ import os
 import collections
 import numpy as np
 
-from pysc2.env import environment
 from absl import flags
+from pysc2.env import environment
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files')
-flags.DEFINE_enum('race_matchup', default='TvT', enum_values=['TvT', 'TvP', 'TvZ', 'PvP', 'PvZ', 'ZvZ'], help='Race matchups.')
-flags.register_validator('race_matchup', lambda matchup: all([race in ['T', 'P', 'Z'] for race in matchup.split('v')]))
-flags.mark_flag_as_required('race_matchup')
 
 
 class ParserBase(object):
     """Abstract class for replay parsers."""
-    def __init__(self, replay_name):
-        self.replay_name = replay_name
-        self.write_dir = os.path.join(FLAGS.result_dir, FLAGS.race_matchup, replay_name)  # TODO: Move as argument in 'step'
+    def __init__(self, write_dir):
+        self.write_dir = write_dir
 
     def step(self, timestep):
         """..."""
@@ -45,8 +40,8 @@ class ParserBase(object):
 
 class ScreenFeatParser(ParserBase):
     """Parse 'feature_screen' from timestep observation."""
-    def __init__(self, replay_name):
-        super(ScreenFeatParser, self).__init__(replay_name)
+    def __init__(self, write_dir):
+        super(ScreenFeatParser, self).__init__(write_dir)
         self.screen_features = collections.defaultdict(list)
 
     def parse(self, timestep):
@@ -78,8 +73,8 @@ class ScreenFeatParser(ParserBase):
 
 class MinimapFeatParser(ParserBase):
     """Parse 'feature_minimap' from timestep observation."""
-    def __init__(self, replay_name):
-        super(MinimapFeatParser, self).__init__(replay_name)
+    def __init__(self, write_dir):
+        super(MinimapFeatParser, self).__init__(write_dir)
         self.minimap_features = collections.defaultdict(list)
 
     def parse(self, timestep):
@@ -114,8 +109,8 @@ class SpatialFeatParser(ParserBase):
     Parse 'feature_spatial' from timestep observation.
     Note that 'feature_spatial' is a customly implemented feature.
     """
-    def __init__(self, replay_name):
-        super(SpatialFeatParser, self).__init__(replay_name)
+    def __init__(self, write_dir):
+        super(SpatialFeatParser, self).__init__(write_dir)
         self.spatial_features = collections.defaultdict(list)
 
     def parse(self, timestep):

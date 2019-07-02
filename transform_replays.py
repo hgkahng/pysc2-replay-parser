@@ -12,10 +12,13 @@ import os
 import sys
 import glob
 import json
+import time
 import collections
 import numpy as np
 
-from absl import app, flags
+from absl import app
+from absl import flags
+from absl import logging
 from pysc2 import run_configs
 from pysc2.env import environment
 from pysc2.lib import point, features
@@ -34,11 +37,17 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('sc2_path', default='C:/Program Files (x86)/StarCraft II/', help='Path to where the client is installed.')
 flags.DEFINE_string('replay_file', default=None, help='Path to replay file, optional if replay directory is not specified.')
 flags.DEFINE_string('replay_dir', default=None, help='Directory with replays, optional if replay file is not specified.')
+flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files')
 flags.DEFINE_integer('screen_size', default=64, help='Size of game screen.')
 flags.DEFINE_integer('minimap_size', default=64, help='Size of minimap.')
 flags.DEFINE_integer('step_mul', default=4, help='Sample interval.')
 flags.DEFINE_integer('min_game_length', default=3000, help='Game length lower bound.')
 flags.DEFINE_float('discount', default=1., help='Not used.')
+
+flags.DEFINE_enum('race_matchup', default=None, enum_values=['TvT', 'TvP', 'TvZ', 'PvP', 'PvZ', 'ZvZ'], help='Race matchups.')
+flags.register_validator('race_matchup', lambda matchup: all([race in ['T', 'P', 'Z'] for race in matchup.split('v')]))
+
+logging.set_verbosity(logging.INFO)
 
 
 def check_flags():
@@ -47,9 +56,9 @@ def check_flags():
         raise ValueError("Only one of 'replay_file' and 'replay_dir' must be specified.")
     else:
         if FLAGS.replay_file is not None:
-            print("Parsing a single replay.")
+            logging.info("Parsing a single replay.")
         elif FLAGS.replay_dir is not None:
-            print("Parsing replays in {}".format(FLAGS.replay_dir))
+            logging.info("Parsing replays in {}".format(FLAGS.replay_dir))
         else:
             raise ValueError("Both 'replay_file' and 'replay_dir' not specified.")
 
@@ -60,26 +69,26 @@ class ReplayRunner(object):
         https://github.com/narhen/pysc2-replay/blob/master/transform_replay.py
         https://github.com/deepmind/pysc2/blob/master/pysc2/bin/replay_actions.py
     """
-    def __init__(self, replay_file_path, parsers,
+    def __init__(self, replay_file_path, parser_objects,
                  player_id=1, screen_size=(64, 64), minimap_size=(64, 64),
                  discount=1., step_mul=1):
 
         self.customized = True  # FIXME
 
-        if isinstance(parsers, list):
-            self.parsers = parsers
-        elif isinstance(parsers, ParserBase):
-            self.parsers = [parsers]
-        else:
-            raise ValueError("Argument 'parsers' expects a list of Parser instances or a single Parser.")
-
-        self.discount = discount
-        self.step_mul = step_mul
-        self.player_id = player_id
-
         self.replay_file_path = os.path.abspath(replay_file_path)
         self.replay_name = os.path.split(replay_file_path)[-1].replace('.SC2Replay', '')
         self.write_dir = os.path.join(FLAGS.result_dir, FLAGS.race_matchup, self.replay_name)
+
+        if isinstance(parser_objects, list):
+            self.parsers = [p_obj(self.write_dir) for p_obj in parser_objects]
+        elif issubclass(parser_objects, ParserBase):
+            self.parsers = [parser_objects(self.write_dir)]
+        else:
+            raise ValueError("Argument 'parsers' expects a single or list of Parser objects.")
+
+        self.player_id = player_id
+        self.discount = discount
+        self.step_mul = step_mul
 
         # Configure screen size
         if isinstance(screen_size, tuple):
@@ -103,40 +112,30 @@ class ReplayRunner(object):
         # Arguments for 'sc_process.StarCraftProcess'. Check the following:
         # https://github.com/deepmind/pysc2/blob/master/pysc2/lib/sc_process.py
         sc2_process_configs = {"full_screen": False}
-
-        self.run_config = run_configs.get()                              # iterates through subclasses of lib.RunConfig.
-        self.sc2_process = self.run_config.start(**sc2_process_configs)  # TODO: .close() after usage !!!
-        self.controller = self.sc2_process.controller                    # lib.remote_controller.RemoteController
+        self.run_config = run_configs.get()
+        self.sc2_process = self.run_config.start(**sc2_process_configs)
+        self.controller = self.sc2_process.controller
 
         # Check the following links for usage of run_config and controller.
         #   https://github.com/deepmind/pysc2/blob/master/pysc2/run_configs/platforms.py
         #   https://github.com/deepmind/pysc2/blob/master/pysc2/lib/sc_process.py
         #   https://github.com/deepmind/pysc2/blob/master/pysc2/lib/remote_controller.py
 
-        replay_data = self.run_config.replay_data(self.replay_file_path)  # Read replay file
-        ping = self.controller.ping()
-
-        # 'replay_info' returns metadata about a replay file. Does not load the replay
+        # Load replay information & check validity.
+        replay_data = self.run_config.replay_data(self.replay_file_path)
         info = self.controller.replay_info(replay_data)
-        if not self.check_valid_replay(info, ping):
+        if not self.check_valid_replay(info, self.controller.ping()):
             self.safe_escape()
-            raise ValueError("Invalid replay...")
+            raise ValueError('Invalid replay.')
 
-        # Filter race matchup
-        if not self.is_valid_matchup(info, matchup=FLAGS.race_matchup):
-            self.safe_escape()
-            raise ValueError("Invalid matchup...")
+        # Filter replay by race matchup
+        if FLAGS.race_matchup is not None:
+            if not self.check_valid_matchup(info, matchup=FLAGS.race_matchup):
+                self.safe_escape()
+                raise ValueError('Invalid matchup.')
 
         # Map name
         self.map_name = info.map_name
-
-        # Create write directory
-        os.makedirs(self.write_dir, exist_ok=True)
-
-        # Save player meta information (results, apm, mmr, ...)
-        self.player_meta_info = self.get_player_meta_info(info)
-        with open(os.path.join(self.write_dir, 'PlayerMetaInfo.json'), 'w') as fp:
-            json.dump(self.player_meta_info, fp, indent=4)
 
         # 'raw=True' returns enables the use of 'feature_units'
         # https://github.com/Blizzard/s2client-proto/blob/master/docs/protocol.md#interfaces
@@ -171,23 +170,24 @@ class ReplayRunner(object):
         )
 
         self._state = environment.StepType.FIRST
+        self.info = info
 
     def start(self):
-        """Start parsing replays."""
+        """Parse replays."""
+
+        # Create write directory
+        os.makedirs(self.write_dir, exist_ok=True)
+
+        # Save player meta information (results, apm, mmr, ...)
+        player_meta_info = self.get_player_meta_info(self.info)
+        with open(os.path.join(self.write_dir, 'PlayerMetaInfo.json'), 'w') as fp:
+            json.dump(player_meta_info, fp, indent=4)
+
         # sc_pb; RequestGameInfo -> ResponseGameInfo
         if self.customized:
-            _features = custom_features_from_game_info(
-                game_info=self.controller.game_info(),
-            )
+            _features = custom_features_from_game_info(self.controller.game_info())
         else:
-            _features = features.features_from_game_info(
-                game_info=self.controller.game_info(),
-                use_feature_units=True,
-                use_raw_units=False,
-                action_space=None,
-                hide_specific_actions=True,
-                use_unit_counts=False,
-                use_camera_position=False)
+            _features = features.features_from_game_info(self.controller.game_info())
 
         while True:
 
@@ -196,11 +196,12 @@ class ReplayRunner(object):
 
             # Receive observation (sc_pb, RequestObservation -> ResponseObservation)
             obs = self.controller.observe()
+
+            # '.transform_obs' is defined under features.Features
             try:
-                # 'transform_obs' is defined under features.Features
                 agent_obs = _features.transform_obs(obs)
-            except Exception as e:
-                print(str(e), '...')
+            except Exception as err:
+                print(err)
 
             if obs.player_result:
                 self._state = environment.StepType.LAST
@@ -226,16 +227,16 @@ class ReplayRunner(object):
     def check_valid_replay(info, ping):
         """Check validity of replay."""
         if info.HasField('error'):
-            print('Has error...', end=' ')
+            logging.info('Has error.')
             return False
         elif info.base_build != ping.base_build:
-            print('Different base build...', end=' ')
-            return True
+            logging.info('Different base build.')
+            return False
         elif info.game_duration_loops < FLAGS.min_game_length:
-            print('Game too short...', end=' ')
+            logging.info('Game too short.')
             return False
         elif len(info.player_info) != 2:
-            print('Not a game with two players...', end=' ')
+            logging.info('Not a game with two players.')
             return False
         else:
             return True
@@ -255,7 +256,7 @@ class ReplayRunner(object):
         return result
 
     @staticmethod
-    def is_valid_matchup(info, matchup=None):
+    def check_valid_matchup(info, matchup=None):
         """
         Filter replay by race matchup.
         A typical matchup string takes the form of 'TvT', for example.
@@ -272,8 +273,6 @@ class ReplayRunner(object):
             race_full = sc_common.Race.Name(info_pb.player_info.race_actual)
             race_short = full2short.get(race_full)
             races_short.append(race_short)
-        
-        print('Expected matchup: {} | Received matchup: {}'.format('v'.join(races_short), matchup))
 
         def compare(x_seq, y_seq):
             is_equal = collections.Counter(x_seq) == collections.Counter(y_seq)
@@ -287,7 +286,7 @@ class ReplayRunner(object):
             self.controller.quit()
 
 
-def main(unused):
+def main(argv):
     """Main function."""
 
     # Check flag sanity
@@ -299,13 +298,11 @@ def main(unused):
     # Get parser objects
     parser_objects = [ScreenFeatParser, MinimapFeatParser, SpatialFeatParser]
 
-    # Parse
-    if FLAGS.replay_file is not None:
-        replay_name = os.path.split(FLAGS.replay_file)[-1].replace('.SC2Replay', '')
+    def _main(replay_file, parser_objs):
         try:
             runner = ReplayRunner(
-                replay_file_path=FLAGS.replay_file,
-                parsers=[p(replay_name=replay_name) for p in parser_objects],
+                replay_file_path=replay_file,
+                parser_objects=parser_objs,
                 screen_size=FLAGS.screen_size,
                 minimap_size=FLAGS.minimap_size,
                 discount=FLAGS.discount,
@@ -313,7 +310,7 @@ def main(unused):
             )
             runner.start()
         except ValueError as err:
-            print(str(err), 'Skipping invalid replay...')
+            logging.info(str(err))
         except KeyboardInterrupt:
             sys.exit()
         finally:
@@ -321,33 +318,17 @@ def main(unused):
                 runner.safe_escape()
             except UnboundLocalError:
                 pass
-    else:
+
+    if FLAGS.replay_file is not None:
+        _main(FLAGS.replay_file, parser_objects)
+    elif FLAGS.replay_dir is not None:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
-        num_replays = len(replay_files)
-        print("Parsing {} replays.".format(num_replays))
         for i, replay_file in enumerate(replay_files):
-            replay_name = os.path.split(replay_file)[-1].replace('.SC2Replay', '')
-            try:
-                runner = ReplayRunner(
-                    replay_file_path=replay_file,
-                    parsers=[p(replay_name=replay_name) for p in parser_objects],
-                    screen_size=FLAGS.screen_size,
-                    minimap_size=FLAGS.minimap_size,
-                    discount=FLAGS.discount,
-                    step_mul=FLAGS.step_mul
-                )
-                runner.start()
-            except ValueError as err:
-                print(str(err), 'Skipping...')
-            except KeyboardInterrupt:
-                sys.exit()
-            finally:
-                width_ = int(np.log2(num_replays))
-                print('Replay #{:{align}{width}} terminating...'.format(i + 1, align='>', width=width_))
-                try:
-                    runner.safe_escape()
-                except UnboundLocalError:
-                    pass
+            _main(replay_file, parser_objects)
+            logging.info('Replay #.{} terminating.'.format(i + 1))
+            time.sleep(.5)
+    else:
+        raise NotImplementedError
 
 
 if __name__ == '__main__':
