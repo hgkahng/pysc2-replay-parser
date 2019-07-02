@@ -317,7 +317,10 @@ def main(unused):
         except KeyboardInterrupt:
             sys.exit()
         finally:
-            runner.controller.quit()
+            try:
+                runner.safe_escape()
+            except UnboundLocalError:
+                pass
     else:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
         num_replays = len(replay_files)
@@ -342,8 +345,8 @@ def main(unused):
                 width_ = int(np.log2(num_replays))
                 print('Replay #{:{align}{width}} terminating...'.format(i + 1, align='>', width=width_))
                 try:
-                    runner.controller.quit()
-                except UnboundLocalError:  # When quiting before assignment of controller
+                    runner.safe_escape()
+                except UnboundLocalError:
                     pass
 
 
