@@ -78,6 +78,8 @@ class ReplayRunner(object):
 
         self.replay_file_path = os.path.abspath(replay_file_path)
         self.replay_name = os.path.split(replay_file_path)[-1].replace('.SC2Replay', '')
+        self.write_dir = os.path.join(FLAGS.result_dir, self.replay_name)
+        os.makedirs(self.write_dir, exist_ok=True)
 
         # Configure screen size
         if isinstance(screen_size, tuple):
@@ -123,18 +125,8 @@ class ReplayRunner(object):
         # Map name
         self.map_name = info.map_name
 
-        # Save player meta information (TODO: Add more info & design a separate function)
-        self.player_meta_info = {}
-        for info_pb in info.player_info:
-            temp_info = {}
-            temp_info['race'] = sc_common.Race.Name(info_pb.player_info.race_actual)
-            temp_info['result'] = sc_pb.Result.Name(info_pb.player_result.result)
-            temp_info['apm'] = info_pb.player_apm
-            temp_info['mmr'] = info_pb.player_mmr
-            self.player_meta_info[info_pb.player_info.player_id] = temp_info
-
-        self.write_dir = os.path.join(FLAGS.result_dir, self.replay_name)
-        os.makedirs(self.write_dir, exist_ok=True)
+        # Save player meta information (results, apm, mmr, ...)
+        self.player_meta_info = self.get_player_meta_info(info)
         with open(os.path.join(self.write_dir, 'PlayerMetaInfo.json'), 'w') as fp:
             json.dump(self.player_meta_info, fp, indent=4)
 
@@ -239,6 +231,20 @@ class ReplayRunner(object):
             return False
         else:
             return True
+
+    @staticmethod
+    def get_player_meta_info(info):
+        """Get game results."""
+        result = {}
+        for info_pb in info.player_info:
+            temp_info = {}
+            temp_info['race'] = sc_common.Race.Name(info_pb.player_info.race_actual)
+            temp_info['result'] = sc_pb.Result.Name(info_pb.player_result.result)
+            temp_info['apm'] = info_pb.player_apm
+            temp_info['mmr'] = info_pb.player_mmr
+            result[info_pb.player_info.player_id] = temp_info
+
+        return result
 
     @staticmethod
     def filter_by_matchup(info, matchup=None):
