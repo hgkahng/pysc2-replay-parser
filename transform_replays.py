@@ -43,6 +43,7 @@ flags.DEFINE_integer('minimap_size', default=64, help='Size of minimap.')
 flags.DEFINE_integer('step_mul', default=4, help='Sample interval.')
 flags.DEFINE_integer('min_game_length', default=3000, help='Game length lower bound.')
 flags.DEFINE_float('discount', default=1., help='Not used.')
+flags.DEFINE_bool('override', default=False, help='Force overriding existing results.')
 
 flags.DEFINE_enum('race_matchup', default=None, enum_values=['TvT', 'TvP', 'TvZ', 'PvP', 'PvZ', 'ZvZ'], help='Race matchups.')
 flags.register_validator('race_matchup', lambda matchup: all([race in ['T', 'P', 'Z'] for race in matchup.split('v')]))
@@ -71,9 +72,10 @@ class ReplayRunner(object):
     """
     def __init__(self, replay_file_path, parser_objects,
                  player_id=1, screen_size=(64, 64), minimap_size=(64, 64),
-                 discount=1., step_mul=1):
+                 discount=1., step_mul=1, override=False):
 
         self.customized = True  # FIXME
+        self.override = override
 
         self.replay_file_path = os.path.abspath(replay_file_path)
         self.replay_name = os.path.split(replay_file_path)[-1].replace('.SC2Replay', '')
@@ -137,13 +139,14 @@ class ReplayRunner(object):
         # Map name
         self.map_name = info.map_name
 
+        print('...')
         # 'raw=True' returns enables the use of 'feature_units'
         # https://github.com/Blizzard/s2client-proto/blob/master/docs/protocol.md#interfaces
         interface = sc_pb.InterfaceOptions(
             raw=False,
             score=True,
             show_cloaked=False,
-            feature_layer=sc_pb.SpatialCameraSetup(width=24)
+            feature_layer=sc_pb.SpatialCameraSetup(width=24, allow_cheating_layers=True)
         )
 
         self.screen_size = point.Point(*self.screen_size)
@@ -175,8 +178,13 @@ class ReplayRunner(object):
     def start(self):
         """Parse replays."""
 
-        # Create write directory
-        os.makedirs(self.write_dir, exist_ok=True)
+        if (not self.override) and os.path.isdir(self.write_dir):
+            files_to_write = [parser.NPZ_FILE for parser in self.parsers]
+            if all([f in os.listdir(self.write_dir) for f in files_to_write]):
+                logging.info('Results already exist.')
+                return
+        else:
+            os.makedirs(self.write_dir, exist_ok=True)
 
         # Save player meta information (results, apm, mmr, ...)
         player_meta_info = self.get_player_meta_info(self.info)
@@ -278,6 +286,8 @@ class ReplayRunner(object):
             is_equal = collections.Counter(x_seq) == collections.Counter(y_seq)
             return is_equal
 
+        print('{}v{}'.format(*races_short))
+
         return compare(matchup_list, races_short)
 
     def safe_escape(self):
@@ -306,7 +316,8 @@ def main(argv):
                 screen_size=FLAGS.screen_size,
                 minimap_size=FLAGS.minimap_size,
                 discount=FLAGS.discount,
-                step_mul=FLAGS.step_mul
+                step_mul=FLAGS.step_mul,
+                override=FLAGS.override
             )
             runner.start()
         except ValueError as err:
@@ -324,6 +335,7 @@ def main(argv):
     elif FLAGS.replay_dir is not None:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
         for i, replay_file in enumerate(replay_files):
+            logging.info('Name: ', replay_file.split()[-1])
             _main(replay_file, parser_objects)
             logging.info('Replay #.{} terminating.'.format(i + 1))
             time.sleep(.5)
