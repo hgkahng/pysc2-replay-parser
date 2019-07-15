@@ -40,6 +40,7 @@ class ParserBase(object):
 
 class ScreenFeatParser(ParserBase):
     """Parse 'feature_screen' from timestep observation."""
+    NPZ_FILE = 'ScreenFeatures.npz'
     def __init__(self, write_dir):
         super(ScreenFeatParser, self).__init__(write_dir)
         self.screen_features = collections.defaultdict(list)
@@ -61,7 +62,7 @@ class ScreenFeatParser(ParserBase):
         assert isinstance(self.screen_features, dict)
 
         if format_ == 'npz':
-            write_file = os.path.join(self.write_dir, 'ScreenFeatures.npz')
+            write_file = os.path.join(self.write_dir, self.NPZ_FILE)
             np.savez_compressed(
                 file=write_file,
                 **self.screen_features
@@ -73,6 +74,7 @@ class ScreenFeatParser(ParserBase):
 
 class MinimapFeatParser(ParserBase):
     """Parse 'feature_minimap' from timestep observation."""
+    NPZ_FILE = 'MinimapFeatures.npz'
     def __init__(self, write_dir):
         super(MinimapFeatParser, self).__init__(write_dir)
         self.minimap_features = collections.defaultdict(list)
@@ -94,7 +96,7 @@ class MinimapFeatParser(ParserBase):
         assert isinstance(self.minimap_features, dict)
 
         if format_ == 'npz':
-            write_file = os.path.join(self.write_dir, 'MinimapFeatures.npz')
+            write_file = os.path.join(self.write_dir, self.NPZ_FILE)
             np.savez_compressed(
                 file=write_file,
                 **self.minimap_features
@@ -109,6 +111,7 @@ class SpatialFeatParser(ParserBase):
     Parse 'feature_spatial' from timestep observation.
     Note that 'feature_spatial' is a customly implemented feature.
     """
+    NPZ_FILE = 'SpatialFeatures.npz'
     def __init__(self, write_dir):
         super(SpatialFeatParser, self).__init__(write_dir)
         self.spatial_features = collections.defaultdict(list)
@@ -130,7 +133,7 @@ class SpatialFeatParser(ParserBase):
         assert isinstance(self.spatial_features, dict)
 
         if format_ == 'npz':
-            write_file = os.path.join(self.write_dir, 'SpatialFeatures.npz')
+            write_file = os.path.join(self.write_dir, self.NPZ_FILE)
             np.savez_compressed(
                 file=write_file,
                 **self.spatial_features
