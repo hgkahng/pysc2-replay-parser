@@ -106,66 +106,7 @@ class CustomFeatures(features.Features):
             raise NotImplementedError
 
         return out
-
-
-    @sw.decorate
-    def transform_obs(self, obs):
-        """Customized rendering of SC2 observations into something an agent can handle."""
-        empty = np.array([], dtype=np.int32).reshape((0, len(features.UnitLayer)))
-        out = named_array.NamedDict(
-            {
-                "single_select": empty,
-                "multi_select": empty,
-                "build_queue": empty,
-                "cargo": empty,
-                "cargo_slots_available": np.array([0], dtype=np.int32),
-            }
-        )
-
-        def or_zeros(layer, size):
-            if layer is not None:
-                return layer.astype(np.int32, copy=False)
-            else:
-                return np.zeros((size.y, size.x), dtype=np.int32)
-
-        aif = self._agent_interface_format
-
-        if aif.feature_dimensions:
-            out['feature_screen'] = named_array.NamedNumpyArray(
-                np.stack(or_zeros(f.unpack(obs.observation), aif.feature_dimensions.screen) for f in features.SCREEN_FEATURES),
-                names=[features.ScreenFeatures, None, None]
-            )
-            out['feature_minimap'] = named_array.NamedNumpyArray(
-                np.stack(or_zeros(f.unpack(obs.observation), aif.feature_dimensions.minimap) for f in features.MINIMAP_FEATURES),
-                names=[features.MinimapFeatures, None, None]
-            )
-            out['feature_spatial'] = named_array.NamedNumpyArray(
-                np.stack(or_zeros(f.unpack(obs.observation), aif.feature_dimensions.minimap) for f in SPATIAL_FEATURES),
-                names=[SpatialFeatures, None, None]
-            )
-
-        if aif.rgb_dimensions:
-            raise NotImplementedError
-
-        out['last_actions'] = None   # FIXME
-        out['action_result'] = None  # FIXME
-        out['alerts'] = None         # FIXME
-        out['game_loop'] = None      # FIXME
-
-        score_details = obs.observation.score.score_details
-        out['score_cumulative'] = None  # FIXME
-
-        def get_score_details(key, details, categories):
-            raise NotImplementedError
-
-        out['score_by_category'] = None  # FIXME
-        out['score_by_vital'] = None     # FIXME
-
-        player = obs.observation.player_common
-        out['player'] = None  # FIXME
-
-        return out
-
+        
 
 def custom_features_from_game_info(
         game_info,
