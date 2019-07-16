@@ -68,62 +68,45 @@ class CustomFeatures(features.Features):
         if self._agent_interface_format.rgb_dimensions:
             raise NotImplementedError
 
-    def observation_spec(self):
-        """Customized observation spec for SC2 environment."""
-        obs_spec = named_array.NamedDict(
-            {
-                "action_result": (0, ),
-                "alerts": (0, ),
-                "available_actions": (0, ),
-                "build_queue": (0, len(features.UnitLayer)),
-                "cargo": (0, len(features.UnitLayer)),
-                "cargo_slots_available": (1, ),
-                "control_groups": (10, 2),
-                "game_loop": (1, ),
-                "last_actions": (0, ),
-                "multi_select": (0, len(features.UnitLayer)),
-                "player": (len(features.Player), ),
-                "score_cumulative": (len(features.ScoreCumulative), ),
-                "score_by_category": (len(features.ScoreByCategory), len(features.ScoreCategories)),
-                "score_by_vital": (len(features.ScoreByVital), len(features.ScoreVitals)),
-                "single_select": (0, len(features.UnitLayer)),
-            }
-        )
-
+    def custom_observation_spec(self):
+        """Customized observation spec with spatial features."""
+        obs_spec = self.observation_spec()
         aif = self._agent_interface_format
         if aif.feature_dimensions:
-            obs_spec['feature_screen'] = (
-                len(features.SCREEN_FEATURES),
-                aif.feature_dimensions.screen.y,
-                aif.feature_dimensions.screen.x
-                )
-            obs_spec['feature_minimap'] = (
-                len(features.MINIMAP_FEATURES),
-                aif.feature_dimensions.minimap.y,
-                aif.feature_dimensions.minimap.x
-            )
             obs_spec['feature_spatial'] = (
                 len(SPATIAL_FEATURES),
-                aif.feature_dimensions.minimap.y,  # FIXME
-                aif.feature_dimensions.minimap.x   # FIXME
+                aif.feature_dimensions.minimap.y,
+                aif.feature_dimensions.minimap.x
             )
 
         if aif.rgb_dimensions:
             raise NotImplementedError
 
-        if aif.use_feature_units:
-            obs_spec['feature_units'] = (0, len(features.FeatureUnit))
-
-        if aif.use_raw_units:
-            obs_spec['raw_units'] = (0, len(features.FeatureUnit))
-
-        if aif.use_unit_counts:
-            obs_spec['unit_counts'] = (0, len(features.UnitCounts))
-
-        if aif.use_camera_position:
-            obs_spec['camera_position'] = (2, )
-
         return obs_spec
+
+    @sw.decorate
+    def custom_transform_obs(self, obs):
+        """Customized rendering of SC2 observations into something an agent can handle."""
+        out = self.transform_obs(obs)
+        aif = self._agent_interface_format
+
+        def or_zeros(layer, size):
+            if layer is not None:
+                return layer.astype(np.int32, copy=False)
+            else:
+                return np.zeros((size.y, size.x), dtype=np.int32)
+
+        if aif.feature_dimensions:
+            out['feature_spatial'] = named_array.NamedNumpyArray(
+                np.stack(or_zeros(f.unpack(obs.observation), aif.feature_dimensions.minimap) for f in SPATIAL_FEATURES),
+                names=[SpatialFeatures, None, None]
+            )
+
+        if aif.rgb_dimensions:
+            raise NotImplementedError
+
+        return out
+
 
     @sw.decorate
     def transform_obs(self, obs):
