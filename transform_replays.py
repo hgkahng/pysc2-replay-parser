@@ -323,8 +323,10 @@ def main(argv):
                 override=FLAGS.override
             )
             runner.start()
-        except ValueError as err:
-            logging.info(str(err))
+        except ValueError as e:
+            logging.info(str(e))
+        except ConnectionRefusedError as e:
+            logging.info(str(e))
         except KeyboardInterrupt:
             sys.exit()
         finally:
