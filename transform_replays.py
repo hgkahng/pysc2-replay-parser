@@ -14,6 +14,7 @@ import glob
 import json
 import time
 import collections
+import websocket
 import numpy as np
 
 from absl import app
@@ -37,7 +38,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('sc2_path', default='C:/Program Files (x86)/StarCraft II/', help='Path to where the client is installed.')
 flags.DEFINE_string('replay_file', default=None, help='Path to replay file, optional if replay directory is not specified.')
 flags.DEFINE_string('replay_dir', default=None, help='Directory with replays, optional if replay file is not specified.')
-flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files')
+flags.DEFINE_string('result_dir', default='./parsed/', help='Directory to write parsed files.')
 flags.DEFINE_integer('screen_size', default=64, help='Size of game screen.')
 flags.DEFINE_integer('minimap_size', default=64, help='Size of minimap.')
 flags.DEFINE_integer('step_mul', default=4, help='Sample interval.')
@@ -61,7 +62,7 @@ def check_flags():
         elif FLAGS.replay_dir is not None:
             logging.info("Parsing replays in {}".format(FLAGS.replay_dir))
         else:
-            raise ValueError("Both 'replay_file' and 'replay_dir' not specified.")
+            raise ValueError("Both 'replay_file' and 'replay_dir' are not specified.")
 
 
 class ReplayRunner(object):
@@ -73,9 +74,6 @@ class ReplayRunner(object):
     def __init__(self, replay_file_path, parser_objects,
                  player_id=1, screen_size=(64, 64), minimap_size=(64, 64),
                  discount=1., step_mul=1, override=False):
-
-        self.customized = True  # FIXME
-        self.override = override
 
         self.replay_file_path = os.path.abspath(replay_file_path)
         self.replay_name = os.path.split(replay_file_path)[-1].replace('.SC2Replay', '')
@@ -91,6 +89,7 @@ class ReplayRunner(object):
         self.player_id = player_id
         self.discount = discount
         self.step_mul = step_mul
+        self.override = override
 
         # Configure screen size
         if isinstance(screen_size, tuple):
@@ -113,10 +112,14 @@ class ReplayRunner(object):
 
         # Arguments for 'sc_process.StarCraftProcess'. Check the following:
         # https://github.com/deepmind/pysc2/blob/master/pysc2/lib/sc_process.py
-        sc2_process_configs = {"full_screen": False}
-        self.run_config = run_configs.get()
-        self.sc2_process = self.run_config.start(**sc2_process_configs)
-        self.controller = self.sc2_process.controller
+
+        try:
+            sc2_process_configs = {"full_screen": False}
+            self.run_config = run_configs.get()
+            self.sc2_process = self.run_config.start(**sc2_process_configs)
+            self.controller = self.sc2_process.controller
+        except websocket.WebSocketTimeoutException as e:
+            raise ConnectionRefusedError('Connection to SC2 process unavailable.')
 
         # Check the following links for usage of run_config and controller.
         #   https://github.com/deepmind/pysc2/blob/master/pysc2/run_configs/platforms.py
@@ -181,7 +184,7 @@ class ReplayRunner(object):
         if (not self.override) and os.path.isdir(self.write_dir):
             files_to_write = [parser.NPZ_FILE for parser in self.parsers]
             if all([f in os.listdir(self.write_dir) for f in files_to_write]):
-                logging.info('Results already exist.')
+                logging.info('This replay has already been parsed.')
                 return
         else:
             os.makedirs(self.write_dir, exist_ok=True)
@@ -192,10 +195,7 @@ class ReplayRunner(object):
             json.dump(player_meta_info, fp, indent=4)
 
         # sc_pb; RequestGameInfo -> ResponseGameInfo
-        if self.customized:
-            _features = custom_features_from_game_info(self.controller.game_info())
-        else:
-            _features = features.features_from_game_info(self.controller.game_info())
+        _features = custom_features_from_game_info(self.controller.game_info())
 
         while True:
 
@@ -207,7 +207,7 @@ class ReplayRunner(object):
 
             # '.transform_obs' is defined under features.Features
             try:
-                agent_obs = _features.transform_obs(obs)
+                agent_obs = _features.custom_transform_obs(obs)
             except Exception as err:
                 print(err)
 
@@ -286,7 +286,10 @@ class ReplayRunner(object):
             is_equal = collections.Counter(x_seq) == collections.Counter(y_seq)
             return is_equal
 
-        print('{}v{}'.format(*races_short))
+        if matchup is not None:
+            logging.info(
+                'Matchup: {}v{}, expected {} (or {}).'.format(*races_short, matchup, matchup[::-1])
+            )
 
         return compare(matchup_list, races_short)
 
@@ -335,10 +338,14 @@ def main(argv):
     elif FLAGS.replay_dir is not None:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
         for i, replay_file in enumerate(replay_files):
-            logging.info('Name: ', replay_file.split()[-1])
+            logging.info(
+                'Path to replay:\n{}'.format(replay_file.split()[-1])
+            )
             _main(replay_file, parser_objects)
-            logging.info('Replay #.{} terminating.'.format(i + 1))
-            time.sleep(.5)
+            logging.info(
+                'Replay [{:>05d}/{:>05d}] terminating.'.format(i + 1, len(replay_files))
+            )
+            time.sleep(3.)
     else:
         raise NotImplementedError
 
