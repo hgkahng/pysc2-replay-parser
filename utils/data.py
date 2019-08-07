@@ -4,12 +4,10 @@ import os
 import sys
 import glob
 import json
+import collections
 
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 
-import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 
@@ -49,8 +47,15 @@ class SC2ReplayDataset(Dataset):
         return name2feature, player_one_wins
 
 
-def replay_collate_fn(batch):
-    return batch
+def replay_collate_fn(batch_):
+
+    out = collections.defaultdict(list)
+    for x_, y_ in batch_:
+        out['inputs'].append(x_)
+        out['targets'].append(y_)
+
+    return out
+
 
 if __name__ == '__main__':
 
@@ -61,20 +66,22 @@ if __name__ == '__main__':
         dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=replay_collate_fn,  # FIXME
+        collate_fn=replay_collate_fn,
     )
 
     print(f'Number of batches per epoch: {len(dataloader)}')
     print("[Spatial features (Customized)]")
     print('=' * 90)
 
-    batch = next(iter(dataloader))
-
     for i, batch in enumerate(dataloader):
-        
-        for sample in batch:
-        
-            for  j, (name, feat) in enumerate(sample[0].items()):
+
+        assert isinstance(batch, dict)
+
+        inputs = batch.get('inputs')    # list
+        targets = batch.get('targets')  # list
+
+        for x, y in zip(inputs, targets):
+            for  j, (name, feat) in enumerate(x.items()):
 
                 type_ = str(SPATIAL_SPECS[name].type).split('-')[-1]
                 scale_ = SPATIAL_SPECS[name].scale
@@ -82,4 +89,3 @@ if __name__ == '__main__':
 
             break
         break
-    
