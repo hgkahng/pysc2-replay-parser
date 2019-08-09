@@ -23,6 +23,7 @@ from absl import logging
 from pysc2 import run_configs
 from pysc2.env import environment
 from pysc2.lib import point, features
+from pysc2.lib import protocol
 from s2clientprotocol import sc2api_pb2 as sc_pb
 from s2clientprotocol import common_pb2 as sc_common
 
@@ -43,6 +44,7 @@ flags.DEFINE_integer('screen_size', default=64, help='Size of game screen.')
 flags.DEFINE_integer('minimap_size', default=64, help='Size of minimap.')
 flags.DEFINE_integer('step_mul', default=4, help='Sample interval.')
 flags.DEFINE_integer('min_game_length', default=3000, help='Game length lower bound.')
+flags.DEFINE_integer('resume_from', default=0, help='Index of replay to resume from.')
 flags.DEFINE_float('discount', default=1., help='Not used.')
 flags.DEFINE_bool('override', default=False, help='Force overriding existing results.')
 
@@ -114,12 +116,14 @@ class ReplayRunner(object):
         # https://github.com/deepmind/pysc2/blob/master/pysc2/lib/sc_process.py
 
         try:
-            sc2_process_configs = {"full_screen": False}
+            sc2_process_configs = {"full_screen": False, 'timeout_seconds': 300}
             self.run_config = run_configs.get()
             self.sc2_process = self.run_config.start(**sc2_process_configs)
             self.controller = self.sc2_process.controller
         except websocket.WebSocketTimeoutException as e:
-            raise ConnectionRefusedError('Connection to SC2 process unavailable.')
+            raise ConnectionRefusedError(f'Connection to SC2 process unavailable. ({e})')
+        except protocol.ConnectionError as e:
+            raise ConnectionRefusedError(f'Connection to SC2 process unavailable. ({e})')
 
         # Check the following links for usage of run_config and controller.
         #   https://github.com/deepmind/pysc2/blob/master/pysc2/run_configs/platforms.py
@@ -339,7 +343,10 @@ def main(argv):
         _main(FLAGS.replay_file, parser_objects)
     elif FLAGS.replay_dir is not None:
         replay_files = glob.glob(os.path.join(FLAGS.replay_dir, '/**/*.SC2Replay'), recursive=True)
+        replay_files = replay_files[FLAGS.resume_from:]
         for i, replay_file in enumerate(replay_files):
+            if i < FLAGS.resume_from:
+                continue
             logging.info(
                 'Path to replay:\n{}'.format(replay_file.split()[-1])
             )
