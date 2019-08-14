@@ -2,3 +2,5 @@
 .vscode/
 __pycache__/
 parsed/
+checkpoints/
+checkpoints_old/
