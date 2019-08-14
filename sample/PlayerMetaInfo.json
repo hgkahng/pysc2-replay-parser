@@ -2,13 +2,13 @@
     "1": {
         "race": "Terran",
         "result": "Defeat",
-        "apm": 145,
-        "mmr": 3601
+        "apm": 79,
+        "mmr": 2598
     },
     "2": {
         "race": "Terran",
         "result": "Victory",
-        "apm": 106,
-        "mmr": 0
+        "apm": 68,
+        "mmr": 2525
     }
 }
