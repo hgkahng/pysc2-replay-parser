@@ -32,7 +32,7 @@ from parsers import ScreenFeatParser
 from parsers import MinimapFeatParser
 from parsers import SpatialFeatParser
 
-from custom_features import custom_features_from_game_info
+from features.custom_features import custom_features_from_game_info
 
 
 FLAGS = flags.FLAGS
