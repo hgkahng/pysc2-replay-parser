@@ -106,7 +106,7 @@ class CustomFeatures(features.Features):
             raise NotImplementedError
 
         return out
-        
+
 
 def custom_features_from_game_info(
         game_info,
